@@ -11,11 +11,11 @@ from sqlalchemy import create_engine
 # MySQL 設定
 # ==========================================================
 DB_USER = "root"
-DB_PASS = "123456"
+DB_PASS = "1qaz@WSX"
 DB_HOST = "host.docker.internal"   # ✅ Docker 必用
 DB_PORT = 3310
 DB_NAME = "fruit_weather"
-TABLE_NAME = "fruit_city_price"
+TABLE_NAME = "volume"
 
 def get_engine():
     return create_engine(
@@ -158,7 +158,7 @@ tz = timezone("Asia/Taipei")
 with DAG(
     dag_id="fruit_price_daily",
     start_date=datetime(2024, 11, 1, tzinfo=tz),
-    schedule="58 3 * * *",
+    schedule="00 15 * * *",
     catchup=False,
     tags=["fruit", "moa"]
 ) as dag:
