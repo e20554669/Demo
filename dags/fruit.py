@@ -14,7 +14,7 @@ from airflow.decorators import task
 DB_CONFIG = {
     "host": "35.221.176.159",   # Docker 內連本機 MySQL
     "port": 3306,
-    "user": "fruit-weather",
+    "user": "fruit-weatrher",
     "password": "1qaz@WSX",
     "database": "fruit_weather",
     "charset": "utf8mb4"
@@ -157,7 +157,7 @@ with DAG(
     dag_id="fruit_price_daily_taskflow",
     description="每日抓取台灣水果行情（TaskFlow API, UTC）",
     start_date=datetime(2025, 1, 1),
-    schedule="35 7 * * *",   # 每天 11:36 UTC 執行
+    schedule="55 7 * * *",   # 每天 11:36 UTC 執行
     catchup=False,
     tags=["fruit", "moa", "mysql"]
 ) as dag:
