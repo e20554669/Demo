@@ -165,7 +165,7 @@ with DAG(
     dag_id="fruit_price_daily_taskflow",
     description="每日抓取台灣水果行情（TaskFlow API, UTC）",
     start_date=datetime(2025, 1, 1),
-    schedule_interval="20 9 * * *",   # 每天 17:05 台灣時間 (UTC+8)
+    schedule_interval="26 9 * * *",   # 每天 17:05 台灣時間 (UTC+8)
     catchup=False,
     tags=["fruit", "moa", "mysql"]
 ) as dag:
@@ -195,7 +195,7 @@ with DAG(
         if not date_range:
             return None
 
-        # ✅ 從字串轉回 datetime.date
+        # ✅ 從字串轉回日期
         start_date = datetime.fromisoformat(date_range[0]).date()
         end_date = datetime.fromisoformat(date_range[1]).date()
 
@@ -234,19 +234,10 @@ with DAG(
             "TransVolume": "trans_volume"
         })
 
+        # ✅ 重點：轉成可序列化格式（字串＋float）
+        grouped["date"] = grouped["date"].astype(str)
+        grouped["avg_price"] = grouped["avg_price"].astype(float)
+        grouped["trans_volume"] = grouped["trans_volume"].astype(float)
+
         print(f"📦 整理完成 {len(grouped)} 筆資料")
-        return grouped.to_dict(orient="records")
-
-    @task()
-    def insert_data(records):
-        """匯入 MySQL"""
-        if not records:
-            print("✅ 無新資料可匯入")
-            return
-        df = pd.DataFrame(records)
-        insert_to_mysql(df)
-
-    # --- DAG 執行流程 ---
-    date_range = prepare_date_range()
-    data = fetch_and_transform(date_range)
-    insert_data(data)
+        return group
