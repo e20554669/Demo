@@ -162,10 +162,10 @@ def insert_to_mysql(df, batch_size=500):
 # 🚀 Airflow DAG with TaskFlow API
 # ==========================================================
 with DAG(
-    dag_id="fruit_price_daily_taskflow",
+    dag_id="fruit_price_daily",
     description="每日抓取台灣水果行情（TaskFlow API, UTC）",
     start_date=datetime(2025, 1, 1),
-    schedule_interval="26 9 * * *",   # 每天 17:05 台灣時間 (UTC+8)
+    schedule_interval="35 9 * * *",   # 每天 17:05 台灣時間 (UTC+8)
     catchup=False,
     tags=["fruit", "moa", "mysql"]
 ) as dag:
