@@ -156,8 +156,8 @@ def insert_to_mysql(df, batch_size=500):
 with DAG(
     dag_id="fruit_price_daily_taskflow",
     description="每日抓取台灣水果行情（TaskFlow API）",
-    start_date=datetime(2025, 11, 1),
-    schedule="26 16 * * *",  # UTC 16:06 = 台灣時間 00:06
+    start_date=datetime(2020, 1, 1),
+    schedule="33 16 * * *",  # UTC 16:06 = 台灣時間 00:06
     catchup=False,
     tags=["fruit", "moa", "mysql"]
 ) as dag:
@@ -170,7 +170,7 @@ with DAG(
             start_date = last_date + timedelta(days=1)
             print(f"📆 從 {start_date} 開始抓取新資料")
         else:
-            start_date = datetime(2025, 11, 1).date()
+            start_date = datetime(2020, 1, 1).date()
             print("🔰 第一次執行，從 2025-11-01 開始")
 
         end_date = datetime.today().date()
