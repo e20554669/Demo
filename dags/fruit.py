@@ -12,7 +12,7 @@ from airflow.decorators import task
 # ✅ MySQL 連線設定
 # ==========================================================
 DB_CONFIG = {
-    "host": "host.docker.internal",   # Docker 內連本機 MySQL
+    "host": "35.221.176.159",   # Docker 內連本機 MySQL
     "port": 3306,
     "user": "fruit-weather",
     "password": "1qaz@WSX",
