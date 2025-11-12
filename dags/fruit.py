@@ -178,7 +178,7 @@ with DAG(
             start_date = last_date + timedelta(days=1)
             print(f"📆 從 {start_date} 開始抓取新資料")
         else:
-            start_date = datetime(2020, 1, 1).date()
+            start_date = datetime(2025, 11, 1).date()
             print("🔰 第一次執行，從 2020-01-01 開始")
 
         end_date = datetime.today().date()
