@@ -3,8 +3,6 @@ import requests
 from datetime import datetime, timedelta
 import pymysql
 from tqdm import tqdm
-
-# ✅ Airflow 套件（新版 TaskFlow API）
 from airflow import DAG
 from airflow.decorators import task
 
@@ -14,20 +12,11 @@ from airflow.decorators import task
 DB_CONFIG = {
     "host": "35.221.176.159",
     "port": 3306,
-    "user": "fruit-weather",      
+    "user": "fruit-weather",
     "password": "1qaz@WSX",
     "database": "fruit",
     "charset": "utf8mb4"
 }
-
-# ✅ 測試連線
-try:
-    conn = pymysql.connect(**DB_CONFIG)
-    print(" 成功連線到 MySQL！")
-    conn.close()
-except Exception as e:
-    print(" 錯誤：", e)
-
 
 TABLE_NAME = "volume"
 
@@ -149,7 +138,7 @@ def insert_to_mysql(df, batch_size=500):
     ]
 
     total = len(data_to_insert)
-    print(f"開始匯入 MySQL，共 {total} 筆資料")
+    print(f"📊 開始匯入 MySQL，共 {total} 筆資料")
 
     for i in tqdm(range(0, total, batch_size), desc="匯入進度", ncols=100):
         batch = data_to_insert[i:i + batch_size]
@@ -160,33 +149,33 @@ def insert_to_mysql(df, batch_size=500):
     conn.close()
     print("✅ 匯入完成！")
 
+
 # ==========================================================
-#  Airflow DAG with TaskFlow API
+# 🚀 Airflow DAG with TaskFlow API
 # ==========================================================
 with DAG(
     dag_id="fruit_price_daily_taskflow",
-    description="每日抓取台灣水果行情（TaskFlow API, UTC）",
+    description="每日抓取台灣水果行情（TaskFlow API）",
     start_date=datetime(2025, 11, 1),
-    schedule="06 16 * * *",   # 每天 11:36 UTC 執行
+    schedule="21 16 * * *",  # UTC 16:06 = 台灣時間 00:06
     catchup=False,
     tags=["fruit", "moa", "mysql"]
 ) as dag:
 
-    # --- 定義任務 ---
     @task()
     def prepare_date_range():
         """偵測 MySQL 最後日期 → 決定抓取範圍"""
         last_date = get_last_date()
         if last_date:
             start_date = last_date + timedelta(days=1)
-            print(f"從 {start_date} 開始抓取新資料")
+            print(f"📆 從 {start_date} 開始抓取新資料")
         else:
             start_date = datetime(2025, 11, 1).date()
-            print("第一次執行，從 2020-01-01 開始")
+            print("🔰 第一次執行，從 2025-11-01 開始")
 
         end_date = datetime.today().date()
         if start_date > end_date:
-            print("已是最新資料，無需更新")
+            print("✅ 已是最新資料，無需更新")
             return None
         return (start_date, end_date)
 
@@ -199,12 +188,13 @@ with DAG(
         start_date, end_date = date_range
         records = []
         cursor_date = start_date
+
         while cursor_date <= end_date:
             print(f"📅 抓取日期：{cursor_date}")
             day_data = fetch_data(cursor_date, cursor_date)
-        if day_data:
-            records.extend(day_data)
-        cursor_date += timedelta(days=1)
+            if day_data:
+                records.extend(day_data)
+            cursor_date += timedelta(days=1)
 
         if not records:
             print("⚠️ 沒有抓到任何資料")
@@ -232,7 +222,7 @@ with DAG(
             "TransVolume": "trans_volume"
         })
         grouped["date"] = grouped["date"].astype(str)
-        
+
         print(f"📦 整理完成 {len(grouped)} 筆資料")
         return grouped.to_dict(orient="records")
 
@@ -245,7 +235,7 @@ with DAG(
         df = pd.DataFrame(records)
         insert_to_mysql(df)
 
-    # --- DAG 執行流程 ---
+    # DAG 任務流程
     date_range = prepare_date_range()
     data = fetch_and_transform(date_range)
     insert_data(data)
