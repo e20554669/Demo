@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import pymysql
 from tqdm import tqdm
 
-# ✅ Airflow 套件（新版 TaskFlow API）
+# ✅ Airflow 套件（TaskFlow API）
 from airflow import DAG
 from airflow.decorators import task
 
@@ -14,7 +14,7 @@ from airflow.decorators import task
 DB_CONFIG = {
     "host": "35.221.176.159",
     "port": 3306,
-    "user": "fruit-weather",      
+    "user": "fruit-weather",
     "password": "1qaz@WSX",
     "database": "fruit",
     "charset": "utf8mb4"
@@ -27,7 +27,6 @@ try:
     conn.close()
 except Exception as e:
     print("❌ 錯誤：", e)
-
 
 TABLE_NAME = "volume"
 
@@ -166,12 +165,11 @@ with DAG(
     dag_id="fruit_price_daily_taskflow",
     description="每日抓取台灣水果行情（TaskFlow API, UTC）",
     start_date=datetime(2025, 1, 1),
-    schedule="5 9 * * *",   # 每天 11:36 UTC 執行
+    schedule_interval="12 9 * * *",   # 每天 17:05 台灣時間 (UTC+8)
     catchup=False,
     tags=["fruit", "moa", "mysql"]
 ) as dag:
 
-    # --- 定義任務 ---
     @task()
     def prepare_date_range():
         """偵測 MySQL 最後日期 → 決定抓取範圍"""
@@ -180,14 +178,16 @@ with DAG(
             start_date = last_date + timedelta(days=1)
             print(f"📆 從 {start_date} 開始抓取新資料")
         else:
-            start_date = datetime(2025, 11, 1).date()
+            start_date = datetime(2020, 1, 1).date()
             print("🔰 第一次執行，從 2020-01-01 開始")
 
         end_date = datetime.today().date()
         if start_date > end_date:
             print("✅ 已是最新資料，無需更新")
             return None
-        return (start_date, end_date)
+
+        # ✅ 將日期轉為字串（避免 XCom Timestamp 序列化錯誤）
+        return (start_date.isoformat(), end_date.isoformat())
 
     @task()
     def fetch_and_transform(date_range):
@@ -195,7 +195,10 @@ with DAG(
         if not date_range:
             return None
 
-        start_date, end_date = date_range
+        # ✅ 從字串轉回 datetime.date
+        start_date = datetime.fromisoformat(date_range[0]).date()
+        end_date = datetime.fromisoformat(date_range[1]).date()
+
         records = []
         cursor_date = start_date
         while cursor_date <= end_date:
