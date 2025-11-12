@@ -23,10 +23,10 @@ DB_CONFIG = {
 # ✅ 測試連線
 try:
     conn = pymysql.connect(**DB_CONFIG)
-    print("✅ 成功連線到 MySQL！")
+    print(" 成功連線到 MySQL！")
     conn.close()
 except Exception as e:
-    print("❌ 錯誤：", e)
+    print(" 錯誤：", e)
 
 
 TABLE_NAME = "volume"
@@ -54,9 +54,10 @@ fruit_name = {
     "R1": "芒果", "L1": "枇杷", "H1": "文旦柚", "H2": "白柚", "Z4": "柿",
     "W1": "洋香瓜", "A1": "香蕉", "Y1": "桃", "45": "草莓", "J1": "荔枝",
     "D1": "楊桃", "41": "梅", "O10": "梨", "V1": "香瓜", "E1": "柳橙",
-    "22": "蓮霧", "C1": "椪柑", "P1": "番石榴", "11": "可可椰子",
+    "22": "蓮霧", "C1": "椪柑", "P1": "番石榴", "11": "可可椰子", "M3": "楊桃",
     "C5": "溫州蜜柑", "S1": "葡萄", "H4": "葡萄柚", "B2": "鳳梨",
-    "G7": "龍眼", "K3": "棗", "F1": "蘋果", "X69": "釋迦",
+    "Q1": "蓮霧", "G7": "龍眼", "K3": "棗", "F1": "蘋果",
+    "X69": "釋迦", "31": "番茄枝"
 }
 
 MARKET_TO_CITY_ID = {
@@ -148,7 +149,7 @@ def insert_to_mysql(df, batch_size=500):
     ]
 
     total = len(data_to_insert)
-    print(f"📊 開始匯入 MySQL，共 {total} 筆資料")
+    print(f"開始匯入 MySQL，共 {total} 筆資料")
 
     for i in tqdm(range(0, total, batch_size), desc="匯入進度", ncols=100):
         batch = data_to_insert[i:i + batch_size]
@@ -160,13 +161,13 @@ def insert_to_mysql(df, batch_size=500):
     print("✅ 匯入完成！")
 
 # ==========================================================
-# 🚀 Airflow DAG with TaskFlow API
+#  Airflow DAG with TaskFlow API
 # ==========================================================
 with DAG(
     dag_id="fruit_price_daily_taskflow",
     description="每日抓取台灣水果行情（TaskFlow API, UTC）",
     start_date=datetime(2025, 11, 1),
-    schedule="40 15 * * *",   # 每天 11:36 UTC 執行
+    schedule="49 15 * * *",   # 每天 11:36 UTC 執行
     catchup=False,
     tags=["fruit", "moa", "mysql"]
 ) as dag:
@@ -178,14 +179,14 @@ with DAG(
         last_date = get_last_date()
         if last_date:
             start_date = last_date + timedelta(days=1)
-            print(f"📆 從 {start_date} 開始抓取新資料")
+            print(f"從 {start_date} 開始抓取新資料")
         else:
             start_date = datetime(2025, 11, 1).date()
-            print("🔰 第一次執行，從 2020-01-01 開始")
+            print("第一次執行，從 2020-01-01 開始")
 
         end_date = datetime.today().date()
         if start_date > end_date:
-            print("✅ 已是最新資料，無需更新")
+            print("已是最新資料，無需更新")
             return None
         return (start_date, end_date)
 
@@ -201,9 +202,9 @@ with DAG(
         while cursor_date <= end_date:
             print(f"📅 抓取日期：{cursor_date}")
             day_data = fetch_data(cursor_date, cursor_date)
-            if day_data:
-                records.extend(day_data)
-            cursor_date += timedelta(days=1)
+        if day_data:
+            records.extend(day_data)
+        cursor_date += timedelta(days=1)
 
         if not records:
             print("⚠️ 沒有抓到任何資料")
@@ -230,7 +231,8 @@ with DAG(
             "AveragePrice": "avg_price",
             "TransVolume": "trans_volume"
         })
-
+        grouped["date"] = grouped["date"].astype(str)
+        
         print(f"📦 整理完成 {len(grouped)} 筆資料")
         return grouped.to_dict(orient="records")
 
