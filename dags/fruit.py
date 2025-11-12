@@ -12,13 +12,22 @@ from airflow.decorators import task
 # ✅ MySQL 連線設定
 # ==========================================================
 DB_CONFIG = {
-    "host": "35.221.176.159",   # Docker 內連本機 MySQL
+    "host": "35.221.176.159",
     "port": 3306,
-    "user": "fruit-weatrher",
+    "user": "fruit-weather",      
     "password": "1qaz@WSX",
-    "database": "fruit_weather",
+    "database": "fruit",
     "charset": "utf8mb4"
 }
+
+# ✅ 測試連線
+try:
+    conn = pymysql.connect(**DB_CONFIG)
+    print("✅ 成功連線到 MySQL！")
+    conn.close()
+except Exception as e:
+    print("❌ 錯誤：", e)
+
 
 TABLE_NAME = "volume"
 
@@ -157,7 +166,7 @@ with DAG(
     dag_id="fruit_price_daily_taskflow",
     description="每日抓取台灣水果行情（TaskFlow API, UTC）",
     start_date=datetime(2025, 1, 1),
-    schedule="55 7 * * *",   # 每天 11:36 UTC 執行
+    schedule="5 9 * * *",   # 每天 11:36 UTC 執行
     catchup=False,
     tags=["fruit", "moa", "mysql"]
 ) as dag:
