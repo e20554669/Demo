@@ -167,7 +167,7 @@ with DAG(
     dag_id="fruit_price_daily_taskflow",
     description="每日抓取台灣水果行情（TaskFlow API, UTC）",
     start_date=datetime(2025, 11, 1),
-    schedule="49 15 * * *",   # 每天 11:36 UTC 執行
+    schedule="00 16 * * *",   # 每天 11:36 UTC 執行
     catchup=False,
     tags=["fruit", "moa", "mysql"]
 ) as dag:
