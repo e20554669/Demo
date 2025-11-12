@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import pymysql
 from tqdm import tqdm
 
-# ✅ Airflow 套件（TaskFlow API）
+# ✅ Airflow 套件（新版 TaskFlow API）
 from airflow import DAG
 from airflow.decorators import task
 
@@ -14,7 +14,7 @@ from airflow.decorators import task
 DB_CONFIG = {
     "host": "35.221.176.159",
     "port": 3306,
-    "user": "fruit-weather",
+    "user": "fruit-weather",      
     "password": "1qaz@WSX",
     "database": "fruit",
     "charset": "utf8mb4"
@@ -27,6 +27,7 @@ try:
     conn.close()
 except Exception as e:
     print("❌ 錯誤：", e)
+
 
 TABLE_NAME = "volume"
 
@@ -162,14 +163,15 @@ def insert_to_mysql(df, batch_size=500):
 # 🚀 Airflow DAG with TaskFlow API
 # ==========================================================
 with DAG(
-    dag_id="fruit_price_daily",
+    dag_id="fruit_price_daily_taskflow",
     description="每日抓取台灣水果行情（TaskFlow API, UTC）",
-    start_date=datetime(2025, 1, 1),
-    schedule_interval="35 9 * * *",   # 每天 17:05 台灣時間 (UTC+8)
+    start_date=datetime(2025, 11, 1),
+    schedule="40 15 * * *",   # 每天 11:36 UTC 執行
     catchup=False,
     tags=["fruit", "moa", "mysql"]
 ) as dag:
 
+    # --- 定義任務 ---
     @task()
     def prepare_date_range():
         """偵測 MySQL 最後日期 → 決定抓取範圍"""
@@ -185,9 +187,7 @@ with DAG(
         if start_date > end_date:
             print("✅ 已是最新資料，無需更新")
             return None
-
-        # ✅ 將日期轉為字串（避免 XCom Timestamp 序列化錯誤）
-        return (start_date.isoformat(), end_date.isoformat())
+        return (start_date, end_date)
 
     @task()
     def fetch_and_transform(date_range):
@@ -195,10 +195,7 @@ with DAG(
         if not date_range:
             return None
 
-        # ✅ 從字串轉回日期
-        start_date = datetime.fromisoformat(date_range[0]).date()
-        end_date = datetime.fromisoformat(date_range[1]).date()
-
+        start_date, end_date = date_range
         records = []
         cursor_date = start_date
         while cursor_date <= end_date:
@@ -234,10 +231,19 @@ with DAG(
             "TransVolume": "trans_volume"
         })
 
-        # ✅ 重點：轉成可序列化格式（字串＋float）
-        grouped["date"] = grouped["date"].astype(str)
-        grouped["avg_price"] = grouped["avg_price"].astype(float)
-        grouped["trans_volume"] = grouped["trans_volume"].astype(float)
-
         print(f"📦 整理完成 {len(grouped)} 筆資料")
-        return group
+        return grouped.to_dict(orient="records")
+
+    @task()
+    def insert_data(records):
+        """匯入 MySQL"""
+        if not records:
+            print("✅ 無新資料可匯入")
+            return
+        df = pd.DataFrame(records)
+        insert_to_mysql(df)
+
+    # --- DAG 執行流程 ---
+    date_range = prepare_date_range()
+    data = fetch_and_transform(date_range)
+    insert_data(data)
