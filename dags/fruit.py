@@ -5,7 +5,7 @@ import pymysql
 from airflow import DAG
 from airflow.decorators import task
 
-#  MySQL 連線設定
+# MySQL 連線設定
 DB_CONFIG = {
     "host": "35.221.176.159",
     "port": 3306,
@@ -14,12 +14,14 @@ DB_CONFIG = {
     "database": "fruit",
     "charset": "utf8mb4"
 }
-#匯入的資料表名稱
+
+# 匯入的資料表名稱
 TABLE_NAME = "volume"
 
-# ✅ API 對應表
+# API URL
 url = "https://data.moa.gov.tw/Service/OpenData/FromM/FarmTransData.aspx"
 
+# API 欄位映射
 column_name = {
     "交易日期": "TransDate",
     "市場代號": "MarketCode",
@@ -33,12 +35,19 @@ column_name = {
     "種類代碼": "TypeCode"
 }
 
+# 35 種水果代碼
 fruit_name = {
-    "72","I1","51","T1","N3","R1","L1","H1","H2","Z4","W1","A1","Y1","45",
-    "J1","D1","41","O10","V1","E1","22","C1","P1","11","M3","C5","S1","H4",
-    "B2","Q1","G7","K3","F1","X69","31"
+    "72": "番茄", "I1": "木瓜", "51": "百香果", "T1": "西瓜", "N3": "李",
+    "R1": "芒果", "L1": "枇杷", "H1": "文旦柚", "H2": "白柚", "Z4": "柿",
+    "W1": "洋香瓜", "A1": "香蕉", "Y1": "桃", "45": "草莓", "J1": "荔枝",
+    "D1": "楊桃", "41": "梅", "O10": "梨", "V1": "香瓜", "E1": "柳橙",
+    "22": "蓮霧", "C1": "椪柑", "P1": "番石榴", "11": "可可椰子", "M3": "楊桃",
+    "C5": "溫州蜜柑", "S1": "葡萄", "H4": "葡萄柚", "B2": "鳳梨",
+    "Q1": "蓮霧", "G7": "龍眼", "K3": "棗", "F1": "蘋果",
+    "X69": "釋迦", "31": "番茄枝"
 }
 
+# 市場 → 城市 ID
 MARKET_TO_CITY_ID = {
     "台北一": "TPE", "台北二": "TPE",
     "板橋區": "NTP", "三重區": "NTP",
@@ -48,8 +57,7 @@ MARKET_TO_CITY_ID = {
     "台東市": "TTT", "南投市": "NTO", "屏東市": "PIF"
 }
 
-
-#民國轉西元
+# 民國 → 西元
 def roc_to_ad(date_str):
     if pd.isna(date_str):
         return None
@@ -61,9 +69,8 @@ def roc_to_ad(date_str):
     d = int(date_str[5:7])
     return f"{y:04d}-{m:02d}-{d:02d}"
 
-# 抓取水果API 資料
+# API 抓取資料
 def fetch_data(start, end, page_top=2000):
-    
     all_data = []
     valid_codes = set(fruit_name.keys())
 
@@ -91,7 +98,7 @@ def fetch_data(start, end, page_top=2000):
 
     return all_data
 
-#查資料庫中最後的日期
+# MySQL 找最大日期
 def get_last_date():
     conn = pymysql.connect(**DB_CONFIG)
     cursor = conn.cursor()
@@ -102,8 +109,8 @@ def get_last_date():
     return result
 
 
-def insert_to_mysql(df, batch_size=500):
-    """逐筆匯入 MySQL（進度條已移除）"""
+# 匯入MySQL
+def insert_to_mysql(df):
     conn = pymysql.connect(**DB_CONFIG)
     cursor = conn.cursor()
 
@@ -117,29 +124,25 @@ def insert_to_mysql(df, batch_size=500):
         (
             row["date"],
             row["city_id"],
-            row["crop_id"],
+            str(row["crop_id"]),      # 避免 72 → 72.0
             float(row["avg_price"]),
             float(row["trans_volume"])
         )
         for _, row in df.iterrows()
     ]
 
-    total = len(data_to_insert)
-    print(f"開始匯入 MySQL，共 {total} 筆資料")
+    print(f"開始匯入 MySQL，共 {len(data_to_insert)} 筆資料")
 
-    # 逐批匯入（無進度條）
-    for i in range(0, total, batch_size):
-        batch = data_to_insert[i:i + batch_size]
-        cursor.executemany(sql, batch)
-        conn.commit()
+    # 一次插入
+    cursor.executemany(sql, data_to_insert)
+    conn.commit()
 
     cursor.close()
     conn.close()
     print("匯入完成！")
 
 
-
-# Airflow DAG with API
+# Airflow DAG
 with DAG(
     dag_id="fruit_price_daily",
     description="每日抓取台灣水果行情（API）",
@@ -151,19 +154,20 @@ with DAG(
 
     @task()
     def prepare_date_range():
-        """偵測 MySQL 最後日期 → 決定抓取範圍"""
         last_date = get_last_date()
         if last_date:
             start_date = last_date + timedelta(days=1)
-            print(f"從 {start_date} 開始抓取新資料")
+            print(f"從 {start_date} 開始抓資料")
         else:
             start_date = datetime(2020, 1, 1).date()
-            print("第一次執行，從 2025-11-01 開始")
+            print("第一次執行，從 2020-01-01 開始")
 
         end_date = datetime.today().date()
+
         if start_date > end_date:
-            print("已是最新資料，無需更新")
+            print("資料已最新，不需更新")
             return None
+
         return (start_date, end_date)
 
     @task()
@@ -173,29 +177,26 @@ with DAG(
 
         start_date, end_date = date_range
         records = []
-        cursor_date = start_date
+        d = start_date
 
-        while cursor_date <= end_date:
-            print(f"抓取日期：{cursor_date}")
-            day_data = fetch_data(cursor_date, cursor_date)
+        while d <= end_date:
+            print(f"抓取：{d}")
+            day_data = fetch_data(d, d)
             if day_data:
                 records.extend(day_data)
-            cursor_date += timedelta(days=1)
+            d += timedelta(days=1)
 
         if not records:
-            print("沒有抓到任何資料")
             return None
 
         df = pd.DataFrame(records)
         df = df.rename(columns={col: column_name.get(col, col) for col in df.columns})
+
         df["TransDate"] = df["TransDate"].apply(roc_to_ad)
         df["TransDate"] = pd.to_datetime(df["TransDate"], errors="coerce")
         df["city_id"] = df["MarketName"].map(MARKET_TO_CITY_ID)
 
-        grouped = df.groupby(
-            ["TransDate", "CropCode", "city_id"],
-            as_index=False
-        ).agg({
+        grouped = df.groupby(["TransDate", "CropCode", "city_id"], as_index=False).agg({
             "AveragePrice": "mean",
             "TransVolume": "sum"
         })
@@ -207,21 +208,19 @@ with DAG(
             "AveragePrice": "avg_price",
             "TransVolume": "trans_volume"
         })
-        grouped["date"] = grouped["date"].astype(str)
 
-        print(f"整理完成 {len(grouped)} 筆資料")
+        grouped["date"] = grouped["date"].astype(str)
         return grouped.to_dict(orient="records")
 
     @task()
     def insert_data(records):
-        """匯入 MySQL"""
         if not records:
-            print("無新資料可匯入")
+            print("沒有新資料可匯入")
             return
         df = pd.DataFrame(records)
         insert_to_mysql(df)
 
-    # DAG 任務流程
-    date_range = prepare_date_range()
-    data = fetch_and_transform(date_range)
+    # DAG pipeline
+    dr = prepare_date_range()
+    data = fetch_and_transform(dr)
     insert_data(data)
