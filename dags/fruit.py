@@ -2,14 +2,10 @@ import pandas as pd
 import requests
 from datetime import datetime, timedelta
 import pymysql
-from tqdm import tqdm
 from airflow import DAG
 from airflow.decorators import task
 
-# ==========================================================
-# ✅ MySQL 連線設定
-# ==========================================================
-DB_CONFIG = {
+DB = {
     "host": "35.221.176.159",
     "port": 3306,
     "user": "fruit-weather",
@@ -18,224 +14,106 @@ DB_CONFIG = {
     "charset": "utf8mb4"
 }
 
-TABLE_NAME = "volume"
+TABLE = "volume"
+API_URL = "https://data.moa.gov.tw/Service/OpenData/FromM/FarmTransData.aspx"
 
-# ==========================================================
-# ✅ API 對應表
-# ==========================================================
-url = "https://data.moa.gov.tw/Service/OpenData/FromM/FarmTransData.aspx"
-
-column_name = {
-    "交易日期": "TransDate",
-    "市場代號": "MarketCode",
+COLUMN_MAP = {
+    "交易日期": "date",
     "市場名稱": "MarketName",
-    "作物代號": "CropCode",
-    "上價": "UpperPrice",
-    "中價": "MiddlePrice",
-    "下價": "LowerPrice",
-    "平均價": "AveragePrice",
-    "交易量": "TransVolume",
-    "種類代碼": "TypeCode"
+    "作物代號": "crop_id",
+    "平均價": "avg_price",
+    "交易量": "trans_volume"
 }
 
-fruit_name = {
-    "72": "番茄", "I1": "木瓜", "51": "百香果", "T1": "西瓜", "N3": "李",
-    "R1": "芒果", "L1": "枇杷", "H1": "文旦柚", "H2": "白柚", "Z4": "柿",
-    "W1": "洋香瓜", "A1": "香蕉", "Y1": "桃", "45": "草莓", "J1": "荔枝",
-    "D1": "楊桃", "41": "梅", "O10": "梨", "V1": "香瓜", "E1": "柳橙",
-    "22": "蓮霧", "C1": "椪柑", "P1": "番石榴", "11": "可可椰子", "M3": "楊桃",
-    "C5": "溫州蜜柑", "S1": "葡萄", "H4": "葡萄柚", "B2": "鳳梨",
-    "Q1": "蓮霧", "G7": "龍眼", "K3": "棗", "F1": "蘋果",
-    "X69": "釋迦", "31": "番茄枝"
+FRUIT = {
+    "72","I1","51","T1","N3","R1","L1","H1","H2","Z4","W1","A1","Y1","45",
+    "J1","D1","41","O10","V1","E1","22","C1","P1","11","M3","C5","S1","H4",
+    "B2","Q1","G7","K3","F1","X69","31"
 }
 
-MARKET_TO_CITY_ID = {
-    "台北一": "TPE", "台北二": "TPE",
-    "板橋區": "NTP", "三重區": "NTP",
-    "桃農": "TYN", "宜蘭市": "ILA",
-    "台中市": "TXG", "豐原區": "TXG", "東勢鎮": "TXG",
-    "嘉義市": "CYI", "高雄市": "KHH", "鳳山區": "KHH",
-    "台東市": "TTT", "南投市": "NTO", "屏東市": "PIF"
+CITY = {
+    "台北一":"TPE","台北二":"TPE","板橋區":"NTP","三重區":"NTP","桃農":"TYN","宜蘭市":"ILA",
+    "台中市":"TXG","豐原區":"TXG","東勢鎮":"TXG","嘉義市":"CYI","高雄市":"KHH","鳳山區":"KHH",
+    "台東市":"TTT","南投市":"NTO","屏東市":"PIF"
 }
 
-# ==========================================================
-# 🔧 工具函式
-# ==========================================================
-def roc_to_ad(date_str):
-    """民國轉西元"""
-    if pd.isna(date_str):
-        return None
-    date_str = str(date_str).replace(".", "").replace("/", "")
-    if len(date_str) != 7:
-        return None
-    y = int(date_str[:3]) + 1911
-    m = int(date_str[3:5])
-    d = int(date_str[5:7])
-    return f"{y:04d}-{m:02d}-{d:02d}"
+def roc_to_ad(s):
+    s=str(s).replace(".","").replace("/","")
+    return f"{int(s[:3])+1911}-{s[3:5]}-{s[5:7]}" if len(s)==7 else None
 
-
-def fetch_data(start, end, page_top=2000):
-    """抓取 MOA API 資料"""
-    all_data = []
-    valid_codes = set(fruit_name.keys())
-
+def fetch_moa(start, end):
     params = {
-        "StartDate": f"{start.year - 1911:03d}.{start.month:02d}.{start.day:02d}",
-        "EndDate": f"{end.year - 1911:03d}.{end.month:02d}.{end.day:02d}",
+        "StartDate": f"{start.year-1911:03d}.{start.month:02d}.{start.day:02d}",
+        "EndDate":   f"{end.year-1911:03d}.{end.month:02d}.{end.day:02d}",
         "TcType": "N05",
-        "$top": page_top,
+        "$top": 2000,
         "$skip": 0
     }
-
+    rows=[]
     while True:
-        r = requests.get(url, params=params, timeout=30)
-        r.raise_for_status()
-        data = r.json()
-        if not data:
-            break
-
-        filtered = [i for i in data if i.get("作物代號") in valid_codes]
-        all_data.extend(filtered)
-
-        if len(data) < page_top:
-            break
-        params["$skip"] += page_top
-
-    return all_data
-
+        r = requests.get(API_URL, params=params, timeout=30).json()
+        if not r: break
+        rows += [i for i in r if i.get("作物代號") in FRUIT]
+        if len(r)<2000: break
+        params["$skip"]+=2000
+    return rows
 
 def get_last_date():
-    """查資料庫中最後的日期"""
-    conn = pymysql.connect(**DB_CONFIG)
-    cursor = conn.cursor()
-    cursor.execute(f"SELECT MAX(date) FROM {TABLE_NAME}")
-    result = cursor.fetchone()[0]
-    cursor.close()
-    conn.close()
-    return result
+    conn=pymysql.connect(**DB); cur=conn.cursor()
+    cur.execute(f"SELECT MAX(date) FROM {TABLE}")
+    d=cur.fetchone()[0]
+    cur.close(); conn.close()
+    return d
+
+def insert_mysql(df):
+    conn=pymysql.connect(**DB); cur=conn.cursor()
+    sql=f"INSERT INTO {TABLE} (date, city_id, crop_id, avg_price, trans_volume) VALUES (%s,%s,%s,%s,%s)"
+    cur.executemany(sql, df.values.tolist())
+    conn.commit()
+    cur.close(); conn.close()
 
 
-def insert_to_mysql(df, batch_size=500):
-    """逐筆匯入 MySQL（含進度條）"""
-    conn = pymysql.connect(**DB_CONFIG)
-    cursor = conn.cursor()
-
-    sql = f"""
-    INSERT INTO {TABLE_NAME}
-    (date, city_id, crop_id, avg_price, trans_volume)
-    VALUES (%s, %s, %s, %s, %s)
-    """
-
-    data_to_insert = [
-        (
-            row["date"],
-            row["city_id"],
-            row["crop_id"],
-            float(row["avg_price"]),
-            float(row["trans_volume"])
-        )
-        for _, row in df.iterrows()
-    ]
-
-    total = len(data_to_insert)
-    print(f"📊 開始匯入 MySQL，共 {total} 筆資料")
-
-    for i in tqdm(range(0, total, batch_size), desc="匯入進度", ncols=100):
-        batch = data_to_insert[i:i + batch_size]
-        cursor.executemany(sql, batch)
-        conn.commit()
-
-    cursor.close()
-    conn.close()
-    print("✅ 匯入完成！")
-
-
-# ==========================================================
-# 🚀 Airflow DAG with TaskFlow API
-# ==========================================================
 with DAG(
-    dag_id="fruit_price_daily_taskflow",
-    description="每日抓取台灣水果行情（TaskFlow API）",
-    start_date=datetime(2020, 1, 1),
-    schedule="33 16 * * *",  # UTC 16:06 = 台灣時間 00:06
-    catchup=False,
-    tags=["fruit", "moa", "mysql"]
+    dag_id="fruit_price_daily",
+    start_date=datetime(2020,1,1),
+    schedule="25 3 * * *",
+    catchup=False
 ) as dag:
 
     @task()
-    def prepare_date_range():
-        """偵測 MySQL 最後日期 → 決定抓取範圍"""
-        last_date = get_last_date()
-        if last_date:
-            start_date = last_date + timedelta(days=1)
-            print(f"📆 從 {start_date} 開始抓取新資料")
-        else:
-            start_date = datetime(2020, 1, 1).date()
-            print("🔰 第一次執行，從 2025-11-01 開始")
-
-        end_date = datetime.today().date()
-        if start_date > end_date:
-            print("✅ 已是最新資料，無需更新")
-            return None
-        return (start_date, end_date)
+    def date_range():
+        last = get_last_date()
+        s = (last + timedelta(days=1)) if last else datetime(2020,1,1).date()
+        e = datetime.today().date()
+        return None if s>e else (s, e)
 
     @task()
-    def fetch_and_transform(date_range):
-        """抓取與清洗資料"""
-        if not date_range:
-            return None
+    def process(dr):
+        if not dr: return None
+        s, e = dr
+        rec=[]
+        d=s
+        while d<=e:
+            rec += fetch_moa(d, d)
+            d+=timedelta(days=1)
 
-        start_date, end_date = date_range
-        records = []
-        cursor_date = start_date
+        if not rec: return None
+        df = pd.DataFrame(rec)
+        df = df.rename(columns={k: COLUMN_MAP[k] for k in COLUMN_MAP if k in df.columns})
+        df["date"] = pd.to_datetime(df["date"].apply(roc_to_ad), errors="coerce")
+        df["city_id"] = df["MarketName"].map(CITY)
 
-        while cursor_date <= end_date:
-            print(f"📅 抓取日期：{cursor_date}")
-            day_data = fetch_data(cursor_date, cursor_date)
-            if day_data:
-                records.extend(day_data)
-            cursor_date += timedelta(days=1)
-
-        if not records:
-            print("⚠️ 沒有抓到任何資料")
-            return None
-
-        df = pd.DataFrame(records)
-        df = df.rename(columns={col: column_name.get(col, col) for col in df.columns})
-        df["TransDate"] = df["TransDate"].apply(roc_to_ad)
-        df["TransDate"] = pd.to_datetime(df["TransDate"], errors="coerce")
-        df["city_id"] = df["MarketName"].map(MARKET_TO_CITY_ID)
-
-        grouped = df.groupby(
-            ["TransDate", "CropCode", "city_id"],
-            as_index=False
-        ).agg({
-            "AveragePrice": "mean",
-            "TransVolume": "sum"
+        g = df.groupby(["date","crop_id","city_id"],as_index=False).agg({
+            "avg_price":"mean",
+            "trans_volume":"sum"
         })
-
-        grouped["AveragePrice"] = grouped["AveragePrice"].round(2)
-        grouped = grouped.rename(columns={
-            "TransDate": "date",
-            "CropCode": "crop_id",
-            "AveragePrice": "avg_price",
-            "TransVolume": "trans_volume"
-        })
-        grouped["date"] = grouped["date"].astype(str)
-
-        print(f"📦 整理完成 {len(grouped)} 筆資料")
-        return grouped.to_dict(orient="records")
+        g["avg_price"]=g["avg_price"].round(2)
+        g["date"]=g["date"].astype(str)
+        return g
 
     @task()
-    def insert_data(records):
-        """匯入 MySQL"""
-        if not records:
-            print("✅ 無新資料可匯入")
-            return
-        df = pd.DataFrame(records)
-        insert_to_mysql(df)
+    def load(df):
+        if df is not None and len(df)>0:
+            insert_mysql(df)
 
-    # DAG 任務流程
-    date_range = prepare_date_range()
-    data = fetch_and_transform(date_range)
-    insert_data(data)
+    load(process(date_range()))
